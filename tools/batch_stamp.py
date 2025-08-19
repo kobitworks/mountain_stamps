@@ -3,6 +3,9 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 import cv2
+from urllib.request import urlopen
+from urllib.parse import quote, unquote
+import json, csv, io
 
 def ensure_dir(p: str):
     Path(p).mkdir(parents=True, exist_ok=True)
@@ -140,6 +143,43 @@ def filename_to_name(path: str) -> str:
     stem = Path(path).stem.replace("_", " ").strip()
     return stem[:24] if len(stem) > 24 else stem
 
+
+def fetch_mountain_data(name: str) -> dict:
+    """日本語Wikipediaから山の概要を取得する。"""
+    url = f"https://ja.wikipedia.org/api/rest_v1/page/summary/{quote(name)}"
+    try:
+        with urlopen(url, timeout=10) as r:
+            data = json.load(r)
+        return {
+            "title": data.get("title", name),
+            "summary": data.get("extract", ""),
+        }
+    except Exception as e:
+        print(f"WARN: Wikipedia取得失敗 ({name}) {e}")
+        return {"title": name, "summary": ""}
+
+
+def fetch_from_note_url(note_url: str) -> dict:
+    """WikipediaのURLからタイトル、概要、画像を取得する"""
+    title = unquote(note_url.rsplit("/", 1)[-1])
+    url = f"https://ja.wikipedia.org/api/rest_v1/page/summary/{quote(title)}"
+    with urlopen(url, timeout=10) as r:
+        data = json.load(r)
+    img_url = (
+        data.get("originalimage", {}).get("source")
+        or data.get("thumbnail", {}).get("source")
+    )
+    if not img_url:
+        raise ValueError("画像が見つかりません")
+    img_bytes = urlopen(img_url, timeout=10).read()
+    ext = Path(img_url).suffix.lstrip(".") or "jpg"
+    return {
+        "title": data.get("title", title),
+        "summary": data.get("extract", ""),
+        "image": img_bytes,
+        "ext": ext,
+    }
+
 def process_folder(in_dir: str, out_dir: str):
     ensure_dir(out_dir)
     paths = []
@@ -151,14 +191,55 @@ def process_folder(in_dir: str, out_dir: str):
             img = load_image(p)
             mask = extract_mountain_mask(img)
             name = filename_to_name(p)
-            stamp = make_stamp(img, mask, name=name)
-            out = Path(out_dir) / (Path(p).stem + "_stamp.png")
-            stamp.save(out)
-            print(f"OK: {p} -> {out}")
+            info = fetch_mountain_data(name)
+            stamp = make_stamp(img, mask, name=info["title"])
+            stem = Path(p).stem
+            out_stamp = Path(out_dir) / f"{stem}.png"
+            stamp.save(out_stamp)
+            if info["summary"]:
+                out_txt = Path(out_dir) / f"{stem}_wiki.txt"
+                out_txt.write_text(info["summary"], encoding="utf-8")
+            print(f"OK: {p} -> {out_stamp}")
         except Exception as e:
             print(f"FAIL: {p} ({e})")
 
+def process_csv(csv_path: str, in_dir: str, out_dir: str):
+    ensure_dir(in_dir)
+    ensure_dir(out_dir)
+    with open(csv_path, encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            gis_id = row.get("gis_id")
+            name = row.get("a_name")
+            url = row.get("note_url")
+            if not (gis_id and name and url):
+                continue
+            try:
+                info = fetch_from_note_url(url)
+                filename = f"{gis_id}_{name}.{info['ext']}"
+                img_path = Path(in_dir) / filename
+                with open(img_path, "wb") as wf:
+                    wf.write(info["image"])
+                img = Image.open(io.BytesIO(info["image"]))
+                mask = extract_mountain_mask(img)
+                stamp = make_stamp(img, mask, name=info["title"])
+                out_path = Path(out_dir) / f"{gis_id}_{name}.png"
+                stamp.save(out_path)
+                if info["summary"]:
+                    Path(out_dir, f"{gis_id}_{name}_wiki.txt").write_text(
+                        info["summary"], encoding="utf-8"
+                    )
+                print(f"OK: {name} -> {out_path}")
+            except Exception as e:
+                print(f"FAIL: {name} ({e})")
+
+
 if __name__ == "__main__":
-    in_dir = sys.argv[1] if len(sys.argv) > 1 else "input_images"
-    out_dir = sys.argv[2] if len(sys.argv) > 2 else "output_stamps"
-    process_folder(in_dir, out_dir)
+    if len(sys.argv) > 1 and sys.argv[1].endswith(".csv"):
+        csv_path = sys.argv[1]
+        in_dir = sys.argv[2] if len(sys.argv) > 2 else "input_images"
+        out_dir = sys.argv[3] if len(sys.argv) > 3 else "output_stamps"
+        process_csv(csv_path, in_dir, out_dir)
+    else:
+        in_dir = sys.argv[1] if len(sys.argv) > 1 else "input_images"
+        out_dir = sys.argv[2] if len(sys.argv) > 2 else "output_stamps"
+        process_folder(in_dir, out_dir)
