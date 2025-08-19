@@ -1,6 +1,6 @@
 import sys, csv
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 import numpy as np
 import cv2
 from urllib.request import urlopen
@@ -13,14 +13,6 @@ def ensure_dir(p: str):
 def load_image(path: str) -> Image.Image:
     return Image.open(path).convert("RGB")
 
-def dominant_colors(img_pil: Image.Image, k: int = 3):
-    small = img_pil.resize((128, 128))
-    arr = np.array(small).reshape(-1, 3).astype(np.float32)
-    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 1.0)
-    _, labels, centers = cv2.kmeans(arr, k, None, criteria, 8, cv2.KMEANS_PP_CENTERS)
-    counts = np.bincount(labels.flatten())
-    order = counts.argsort()[::-1]
-    return [tuple(map(int, centers[i])) for i in order]  # [(r,g,b), ...]
 
 def extract_mountain_mask(img_pil: Image.Image) -> Image.Image:
     """Canny + 形態学で最大コンポーネント抽出し、上側20%は空とみなして切り落とす。"""
@@ -49,13 +41,13 @@ def extract_mountain_mask(img_pil: Image.Image) -> Image.Image:
 
     cut = int(mask.shape[0] * 0.2)
     mask[:cut, :] = 0
-    mask = cv2.GaussianBlur(mask, (7, 7), 0)
 
     mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_LINEAR)
+    _, mask = cv2.threshold(mask, 100, 255, cv2.THRESH_BINARY)
     return Image.fromarray(mask)
 
 
-def crop_to_mask(img_pil: Image.Image, mask_pil: Image.Image, pad_ratio: float = 0.1):
+def crop_to_mask(img_pil: Image.Image, mask_pil: Image.Image, pad_ratio: float = 0.02):
     """マスクの外接矩形で切り抜き、周囲に少し余白を持たせる。"""
     bbox = mask_pil.getbbox()
     if not bbox:
@@ -70,89 +62,31 @@ def crop_to_mask(img_pil: Image.Image, mask_pil: Image.Image, pad_ratio: float =
     b = min(b + pad_y, img_pil.height)
     return img_pil.crop((l, t, r, b)), mask_pil.crop((l, t, r, b))
 
-def try_load_font(size: int = 44):
-    # Ubuntu (GH Actions) に入る DejaVuSans の標準パスを試し、無ければデフォルト
-    for p in [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]:
-        try:
-            return ImageFont.truetype(p, size)
-        except Exception:
-            pass
-    try:
-        return ImageFont.truetype("DejaVuSans-Bold.ttf", size)
-    except Exception:
-        return ImageFont.load_default()
-
 def make_stamp(img_pil: Image.Image, mask_pil: Image.Image, name: str = "") -> Image.Image:
     size = 768
     canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    base = Image.new("RGBA", (size, size), (255, 255, 255, 0))
-    draw = ImageDraw.Draw(base)
+    draw = ImageDraw.Draw(canvas)
 
-    margin = 28
-    bbox = [margin, margin, size - margin, size - margin]
-    draw.ellipse(bbox, fill=(255, 255, 255, 255))
-    draw.ellipse([margin + 8, margin + 8, size - margin - 8, size - margin - 8], outline=(0, 0, 0, 40), width=2)
-    canvas.alpha_composite(base)
+    margin = 20
+    border = 12
+    circle_bbox = [margin, margin, size - margin, size - margin]
+    draw.ellipse(circle_bbox, fill=(255, 255, 255, 255), outline=(0, 0, 0, 255), width=border)
 
-    # 背景グラデ用の主要色
-    palette = dominant_colors(img_pil, k=3)
-    base_col = tuple(palette[0]) + (255,)
-    dark_col = tuple(palette[1]) + (255,)
+    inner_size = size - 2 * (margin + border)
+    scale = inner_size / max(img_pil.width, img_pil.height)
+    new_size = (int(img_pil.width * scale), int(img_pil.height * scale))
+    img_sq = img_pil.resize(new_size, Image.LANCZOS)
+    mask_sq = mask_pil.resize(new_size, Image.LANCZOS)
+    m = mask_sq.convert("L").point(lambda v: 255 if v > 80 else 0)
 
-    # 丸の内側に入る正方サークル領域
-    inner_w = inner_h = size - 2 * margin - 40
-    center = ((size - inner_w) // 2, (size - inner_h) // 2)
+    sil_layer = Image.new("RGBA", new_size, (0, 0, 0, 255))
+    silhouette = Image.composite(sil_layer, Image.new("RGBA", new_size, (0, 0, 0, 0)), m)
 
-    # グラデーション背景
-    grad = Image.new("RGBA", (1, inner_h), (0, 0, 0, 0))
-    for y in range(inner_h):
-        t = y / (inner_h - 1)
-        col = tuple(int(base_col[i] * (0.85 + 0.15 * t)) for i in range(3)) + (255,)
-        grad.putpixel((0, y), col)
-    grad = grad.resize((inner_w, inner_h))
-    circle_mask = Image.new("L", (inner_w, inner_h), 0)
-    ImageDraw.Draw(circle_mask).ellipse([0, 0, inner_w, inner_h], fill=255)
-    tmp = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    tmp.paste(grad, center, circle_mask)
-    canvas.alpha_composite(tmp)
-
-    # 画像→シルエット
-    img_sq = img_pil.copy()
-    img_sq.thumbnail((inner_w, inner_h))
-    mask_sq = mask_pil.copy()
-    mask_sq.thumbnail(img_sq.size)
-    m = mask_sq.convert("L").point(lambda v: 255 if v > 100 else 0)
-    sil_layer = Image.new("RGBA", img_sq.size, dark_col)
-    silhouette = Image.composite(sil_layer, Image.new("RGBA", img_sq.size, (0, 0, 0, 0)), m)
-
-    # ちょい下寄せ
-    offset = (center[0] + (inner_w - silhouette.size[0]) // 2,
-              center[1] + (inner_h - silhouette.size[1]) // 2 + 30)
+    offset = (margin + border + (inner_size - new_size[0]) // 2,
+              margin + border + (inner_size - new_size[1]) // 2)
     tmp2 = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
     tmp2.paste(silhouette, offset, silhouette.split()[3])
     canvas.alpha_composite(tmp2)
-
-    # 白い外枠
-    outline = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    od = ImageDraw.Draw(outline)
-    od.ellipse([margin, margin, size - margin, size - margin], outline=(255, 255, 255, 255), width=14)
-    canvas.alpha_composite(outline)
-
-    # テキスト
-    if name:
-        font = try_load_font(44)
-        bbox = font.getbbox(name)
-        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        text_img = Image.new("RGBA", (tw + 24, th + 12), (0, 0, 0, 0))
-        td = ImageDraw.Draw(text_img)
-        for dx, dy in [(-2, 0), (2, 0), (0, -2), (0, 2)]:
-            td.text((12 + dx, 6 + dy), name, font=font, fill=(0, 0, 0, 190))
-        td.text((12, 6), name, font=font, fill=(255, 255, 255, 255))
-        pos = ((size - text_img.size[0]) // 2, size - text_img.size[1] - 22)
-        canvas.alpha_composite(text_img, pos)
 
     return canvas
 
