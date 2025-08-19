@@ -1,0 +1,40 @@
+name: Generate Mountain Stamps
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '0 20 * * *'   # 毎日UTC20:00（JST+9で翌5:00）
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system deps (fonts)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-dejavu-core
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run batch
+        run: |
+          python tools/batch_stamp.py input_images output_stamps
+
+      - name: Commit results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add output_stamps/*.png || true
+          git commit -m "Add new mountain stamps [skip ci]" || echo "No changes to commit"
+          git push || echo "Nothing to push"
