@@ -77,7 +77,7 @@ def make_stamp(img_pil: Image.Image, mask_pil: Image.Image, name: str = "") -> I
     draw = ImageDraw.Draw(canvas)
 
     margin = 20
-    border = 12
+    border = 24  # 円枠線を従来の2倍に太くする
     circle_bbox = [margin, margin, size - margin, size - margin]
     draw.ellipse(circle_bbox, fill=(255, 255, 255, 255), outline=(0, 0, 0, 255), width=border)
 
@@ -95,6 +95,10 @@ def make_stamp(img_pil: Image.Image, mask_pil: Image.Image, name: str = "") -> I
               margin + border + (inner_size - new_size[1]) // 2)
     tmp2 = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
     tmp2.paste(silhouette, offset, silhouette.split()[3])
+    # 山のシルエットが円の外にはみ出さないようにクリッピング
+    circle_mask = Image.new("L", canvas.size, 0)
+    ImageDraw.Draw(circle_mask).ellipse(circle_bbox, fill=255)
+    tmp2 = Image.composite(tmp2, Image.new("RGBA", canvas.size, (0, 0, 0, 0)), circle_mask)
     canvas.alpha_composite(tmp2)
 
     if name:

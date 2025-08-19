@@ -2,7 +2,7 @@
 
 山の写真から白黒のスタンプ風PNGを **無料/CPUのみ** でバッチ生成します。
 - リスト: `dat/top100mountains_v4.csv`
-- 入力: Wikipediaから自動取得し `input_images/` に保存
+- 入力: Wikipediaから自動取得し `input_images/` に保存（生成後も削除されません）
 - 出力: `output_stamps/`（入力と同名のPNG、透過768px）
 - 山名入りスタンプ: `complete_stamp/`
 - 自動化: GitHub Actions（毎日UTC20:00/JST05:00 & 手動実行）
@@ -25,7 +25,7 @@ python tools/batch_stamp.py input_images output_stamps
 ## 仕組み（概要）
 
 * OpenCV(CPU)の Canny + 形態学 + 最大コンポーネントで **山シルエット** 抽出
-* Pillowで **白い円背景と黒い山シルエット** を合成、透過PNGで保存
+* Pillowで **白い円背景と黒い山シルエット** を合成、透過PNGで保存（円枠線は従来の2倍の太さ）
 
 ## 注意
 
