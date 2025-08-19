@@ -128,7 +128,8 @@ def make_stamp(img_pil: Image.Image, mask_pil: Image.Image, name: str = "") -> I
     # テキスト
     if name:
         font = try_load_font(44)
-        tw, th = font.getsize(name)
+        bbox = font.getbbox(name)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
         text_img = Image.new("RGBA", (tw + 24, th + 12), (0, 0, 0, 0))
         td = ImageDraw.Draw(text_img)
         for dx, dy in [(-2, 0), (2, 0), (0, -2), (0, 2)]:
@@ -214,8 +215,32 @@ def process_folder(in_dir: str, out_dir: str):
             print(f"FAIL: {p} ({e})")
 
 if __name__ == "__main__":
-    csv_path = sys.argv[1] if len(sys.argv) > 1 else "dat/top100mountains_v4.csv"
-    in_dir = sys.argv[2] if len(sys.argv) > 2 else "input_images"
-    out_dir = sys.argv[3] if len(sys.argv) > 3 else "output_stamps"
+    # 引数は以下のいずれかの形式を受け付ける:
+    #   python tools/batch_stamp.py                           (全てデフォルト)
+    #   python tools/batch_stamp.py input_dir output_dir      (CSVはデフォルト)
+    #   python tools/batch_stamp.py csv_path input_dir output_dir
+    args = sys.argv[1:]
+
+    csv_path = "dat/top100mountains_v4.csv"
+    in_dir = "input_images"
+    out_dir = "output_stamps"
+
+    if len(args) == 1:
+        first = args[0]
+        if first.lower().endswith(".csv"):
+            csv_path = first
+        else:
+            in_dir = first
+    elif len(args) == 2:
+        first, second = args
+        if first.lower().endswith(".csv"):
+            csv_path = first
+            in_dir = second
+        else:
+            in_dir = first
+            out_dir = second
+    elif len(args) >= 3:
+        csv_path, in_dir, out_dir = args[:3]
+
     download_mountain_photos(csv_path, in_dir)
     process_folder(in_dir, out_dir)
