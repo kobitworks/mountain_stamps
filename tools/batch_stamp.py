@@ -54,6 +54,22 @@ def extract_mountain_mask(img_pil: Image.Image) -> Image.Image:
     mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_LINEAR)
     return Image.fromarray(mask)
 
+
+def crop_to_mask(img_pil: Image.Image, mask_pil: Image.Image, pad_ratio: float = 0.1):
+    """マスクの外接矩形で切り抜き、周囲に少し余白を持たせる。"""
+    bbox = mask_pil.getbbox()
+    if not bbox:
+        return img_pil, mask_pil
+    l, t, r, b = bbox
+    w, h = r - l, b - t
+    pad_x = int(w * pad_ratio)
+    pad_y = int(h * pad_ratio)
+    l = max(l - pad_x, 0)
+    t = max(t - pad_y, 0)
+    r = min(r + pad_x, img_pil.width)
+    b = min(b + pad_y, img_pil.height)
+    return img_pil.crop((l, t, r, b)), mask_pil.crop((l, t, r, b))
+
 def try_load_font(size: int = 44):
     # Ubuntu (GH Actions) に入る DejaVuSans の標準パスを試し、無ければデフォルト
     for p in [
@@ -145,9 +161,9 @@ def filename_to_name(path: str) -> str:
     return stem[:24] if len(stem) > 24 else stem
 
 
-def download_mountain_photos(csv_path: str, out_dir: str):
+def download_mountain_photos(csv_path: str, img_dir: str, stamp_dir: str):
     """CSVの note_url からWikipediaの画像を取得し保存する。"""
-    ensure_dir(out_dir)
+    ensure_dir(img_dir)
     try:
         with open(csv_path, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
@@ -157,21 +173,27 @@ def download_mountain_photos(csv_path: str, out_dir: str):
                 note_url = row.get("note_url") or row.get("wiki_url")
                 if not (gis_id and name and note_url):
                     continue
-                title = unquote(note_url.rstrip("/").split("/")[-1])
-                info = fetch_mountain_data(title)
-                img_url = info.get("image_url")
-                if not img_url:
-                    print(f"WARN: 画像取得失敗 ({name})")
+                stem = f"{gis_id}_{name}"
+                # すでにスタンプがある場合はスキップ
+                if (Path(stamp_dir) / f"{stem}.png").exists():
                     continue
-                ext = Path(urlparse(img_url).path).suffix or ".jpg"
-                fname = f"{gis_id}_{name}{ext}"
-                save_path = Path(out_dir) / fname
-                try:
-                    with urlopen(img_url, timeout=20) as r, open(save_path, "wb") as out:
-                        out.write(r.read())
-                    print(f"DOWNLOADED: {save_path}")
-                except Exception as e:
-                    print(f"WARN: 画像保存失敗 ({name}) {e}")
+                # 画像ファイルが存在しなければダウンロード
+                if not any((Path(img_dir) / f"{stem}{ext}").exists() for ext in [".jpg", ".jpeg", ".png", ".webp"]):
+                    title = unquote(note_url.rstrip("/").split("/")[-1])
+                    info = fetch_mountain_data(title)
+                    img_url = info.get("image_url")
+                    if not img_url:
+                        print(f"WARN: 画像取得失敗 ({name})")
+                        continue
+                    ext = Path(urlparse(img_url).path).suffix or ".jpg"
+                    fname = f"{stem}{ext}"
+                    save_path = Path(img_dir) / fname
+                    try:
+                        with urlopen(img_url, timeout=20) as r, open(save_path, "wb") as out:
+                            out.write(r.read())
+                        print(f"DOWNLOADED: {save_path}")
+                    except Exception as e:
+                        print(f"WARN: 画像保存失敗 ({name}) {e}")
     except FileNotFoundError:
         print(f"WARN: CSVが見つかりません: {csv_path}")
 
@@ -198,14 +220,17 @@ def process_folder(in_dir: str, out_dir: str):
         paths += list(Path(in_dir).glob(ext))
     paths = sorted(map(str, paths))
     for p in paths:
+        stem = Path(p).stem
+        out_stamp = Path(out_dir) / f"{stem}.png"
+        if out_stamp.exists():
+            continue
         try:
             img = load_image(p)
             mask = extract_mountain_mask(img)
+            img, mask = crop_to_mask(img, mask)
             name = filename_to_name(p)
             info = fetch_mountain_data(name)
             stamp = make_stamp(img, mask, name=info["title"])
-            stem = Path(p).stem
-            out_stamp = Path(out_dir) / f"{stem}.png"
             stamp.save(out_stamp)
             if info["summary"]:
                 out_txt = Path(out_dir) / f"{stem}_wiki.txt"
@@ -242,5 +267,5 @@ if __name__ == "__main__":
     elif len(args) >= 3:
         csv_path, in_dir, out_dir = args[:3]
 
-    download_mountain_photos(csv_path, in_dir)
+    download_mountain_photos(csv_path, in_dir, out_dir)
     process_folder(in_dir, out_dir)
