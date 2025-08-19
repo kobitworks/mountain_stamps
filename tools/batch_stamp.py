@@ -123,7 +123,7 @@ def filename_to_name(path: str) -> str:
     return stem[:24] if len(stem) > 24 else stem
 
 
-def download_mountain_photos(csv_path: str, img_dir: str, stamp_dir: str):
+def download_mountain_photos(csv_path: str, img_dir: str):
     """CSVの note_url からWikipediaの画像を取得し保存する。"""
     ensure_dir(img_dir)
     try:
@@ -136,26 +136,24 @@ def download_mountain_photos(csv_path: str, img_dir: str, stamp_dir: str):
                 if not (gis_id and name and note_url):
                     continue
                 stem = f"{gis_id}_{name}"
-                # すでにスタンプがある場合はスキップ
-                if (Path(stamp_dir) / f"{stem}.png").exists():
-                    continue
                 # 画像ファイルが存在しなければダウンロード
-                if not any((Path(img_dir) / f"{stem}{ext}").exists() for ext in [".jpg", ".jpeg", ".png", ".webp"]):
-                    title = unquote(note_url.rstrip("/").split("/")[-1])
-                    info = fetch_mountain_data(title)
-                    img_url = info.get("image_url")
-                    if not img_url:
-                        print(f"WARN: 画像取得失敗 ({name})")
-                        continue
-                    ext = Path(urlparse(img_url).path).suffix or ".jpg"
-                    fname = f"{stem}{ext}"
-                    save_path = Path(img_dir) / fname
-                    try:
-                        with urlopen(img_url, timeout=20) as r, open(save_path, "wb") as out:
-                            out.write(r.read())
-                        print(f"DOWNLOADED: {save_path}")
-                    except Exception as e:
-                        print(f"WARN: 画像保存失敗 ({name}) {e}")
+                if any((Path(img_dir) / f"{stem}{ext}").exists() for ext in [".jpg", ".jpeg", ".png", ".webp"]):
+                    continue
+                title = unquote(note_url.rstrip("/").split("/")[-1])
+                info = fetch_mountain_data(title)
+                img_url = info.get("image_url")
+                if not img_url:
+                    print(f"WARN: 画像取得失敗 ({name})")
+                    continue
+                ext = Path(urlparse(img_url).path).suffix or ".jpg"
+                fname = f"{stem}{ext}"
+                save_path = Path(img_dir) / fname
+                try:
+                    with urlopen(img_url, timeout=20) as r, open(save_path, "wb") as out:
+                        out.write(r.read())
+                    print(f"DOWNLOADED: {save_path}")
+                except Exception as e:
+                    print(f"WARN: 画像保存失敗 ({name}) {e}")
     except FileNotFoundError:
         print(f"WARN: CSVが見つかりません: {csv_path}")
 
@@ -175,9 +173,9 @@ def fetch_mountain_data(name: str) -> dict:
         print(f"WARN: Wikipedia取得失敗 ({name}) {e}")
         return {"title": name, "summary": "", "image_url": ""}
 
-def process_folder(in_dir: str, out_dir: str, complete_dir: str):
+def generate_stamps(in_dir: str, out_dir: str):
+    """入力画像からスタンプPNGを作成する。"""
     ensure_dir(out_dir)
-    ensure_dir(complete_dir)
     paths = []
     for ext in ("*.jpg", "*.jpeg", "*.png", "*.webp"):
         paths += list(Path(in_dir).glob(ext))
@@ -185,25 +183,50 @@ def process_folder(in_dir: str, out_dir: str, complete_dir: str):
     for p in paths:
         stem = Path(p).stem
         out_stamp = Path(out_dir) / f"{stem}.png"
-        complete_stamp = Path(complete_dir) / f"{stem}.png"
-        if complete_stamp.exists():
+        if out_stamp.exists():
             continue
         try:
             img = load_image(p)
             mask = extract_mountain_mask(img)
             img, mask = crop_to_mask(img, mask)
-            name = filename_to_name(p)
-            info = fetch_mountain_data(name)
             stamp = make_stamp(img, mask)
             stamp.save(out_stamp)
+            print(f"STAMP: {p} -> {out_stamp}")
+        except Exception as e:
+            print(f"FAIL: {p} ({e})")
+
+
+def add_mountain_names(in_dir: str, out_dir: str, complete_dir: str):
+    """スタンプに山名を追加した画像を生成する。"""
+    ensure_dir(complete_dir)
+    for stamp_path in sorted(Path(out_dir).glob("*.png")):
+        stem = stamp_path.stem
+        complete_path = Path(complete_dir) / f"{stem}.png"
+        if complete_path.exists():
+            continue
+        img_path = None
+        for ext in [".jpg", ".jpeg", ".png", ".webp"]:
+            candidate = Path(in_dir) / f"{stem}{ext}"
+            if candidate.exists():
+                img_path = candidate
+                break
+        if img_path is None:
+            print(f"WARN: 元画像なし ({stem})")
+            continue
+        try:
+            img = load_image(str(img_path))
+            mask = extract_mountain_mask(img)
+            img, mask = crop_to_mask(img, mask)
+            name = filename_to_name(str(img_path))
+            info = fetch_mountain_data(name)
             named = make_stamp(img, mask, name=info["title"])
-            named.save(complete_stamp)
+            named.save(complete_path)
             if info["summary"]:
                 out_txt = Path(complete_dir) / f"{stem}_wiki.txt"
                 out_txt.write_text(info["summary"], encoding="utf-8")
-            print(f"OK: {p} -> {complete_stamp}")
+            print(f"COMPLETE: {stamp_path} -> {complete_path}")
         except Exception as e:
-            print(f"FAIL: {p} ({e})")
+            print(f"FAIL: {stamp_path} ({e})")
 
 if __name__ == "__main__":
     # 引数は以下のいずれかの形式を受け付ける:
@@ -236,5 +259,6 @@ if __name__ == "__main__":
         if len(args) >= 4:
             complete_dir = args[3]
 
-    download_mountain_photos(csv_path, in_dir, out_dir)
-    process_folder(in_dir, out_dir, complete_dir)
+    download_mountain_photos(csv_path, in_dir)
+    generate_stamps(in_dir, out_dir)
+    add_mountain_names(in_dir, out_dir, complete_dir)
