@@ -265,6 +265,6 @@ if __name__ == "__main__":
         if len(args) >= 4:
             complete_dir = Path(args[3])
 
-    download_mountain_photos(csv_path, INPUT_DIR)
+    download_mountain_photos(csv_path, in_dir)
     generate_stamps(in_dir, out_dir)
     add_mountain_names(in_dir, out_dir, complete_dir)
