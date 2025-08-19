@@ -10,7 +10,10 @@
 ```bash
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-python tools/batch_stamp.py dat/top100mountains_v4.csv input_images output_stamps
+# CSVを省略すると dat/top100mountains_v4.csv を使用
+python tools/batch_stamp.py input_images output_stamps
+# もしくは CSV も指定
+# python tools/batch_stamp.py dat/top100mountains_v4.csv input_images output_stamps
 ```
 
 ## GitHub Actions
