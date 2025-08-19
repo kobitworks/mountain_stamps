@@ -1,6 +1,6 @@
 # Mountain Stamps (free, CPU-only, batch)
 
-山の写真からスタンプ風PNGを **無料/CPUのみ** でバッチ生成します。
+山の写真から白黒のスタンプ風PNGを **無料/CPUのみ** でバッチ生成します。
 - リスト: `dat/top100mountains_v4.csv`
 - 入力: Wikipediaから自動取得し `input_images/` に保存
 - 出力: `output_stamps/`（入力と同名のPNG、透過768px）
@@ -24,8 +24,7 @@ python tools/batch_stamp.py input_images output_stamps
 ## 仕組み（概要）
 
 * OpenCV(CPU)の Canny + 形態学 + 最大コンポーネントで **山シルエット** 抽出
-* OpenCVの k-means で **主要色抽出**
-* Pillowで **丸背景/白フチ/テキスト** 合成、透過PNGで保存
+* Pillowで **白い円背景と黒い山シルエット** を合成、透過PNGで保存
 
 ## 注意
 
