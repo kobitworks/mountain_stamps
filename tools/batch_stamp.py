@@ -7,6 +7,12 @@ from urllib.request import urlopen
 from urllib.parse import quote, urlparse, unquote
 import json
 
+BASE_DIR = Path(__file__).resolve().parent.parent
+INPUT_DIR = BASE_DIR / "input_images"
+OUTPUT_DIR = BASE_DIR / "output_stamps"
+COMPLETE_DIR = BASE_DIR / "complete_stamp"
+DEFAULT_CSV = BASE_DIR / "dat/top100mountains_v4.csv"
+
 def ensure_dir(p: str):
     Path(p).mkdir(parents=True, exist_ok=True)
 
@@ -123,7 +129,7 @@ def filename_to_name(path: str) -> str:
     return stem[:24] if len(stem) > 24 else stem
 
 
-def download_mountain_photos(csv_path: str, img_dir: str):
+def download_mountain_photos(csv_path: Path, img_dir: Path = INPUT_DIR):
     """CSVの note_url からWikipediaの画像を取得し保存する。"""
     ensure_dir(img_dir)
     try:
@@ -235,30 +241,30 @@ if __name__ == "__main__":
     #   python tools/batch_stamp.py csv_path input_dir output_dir
     args = sys.argv[1:]
 
-    csv_path = "dat/top100mountains_v4.csv"
-    in_dir = "input_images"
-    out_dir = "output_stamps"
-    complete_dir = "complete_stamp"
+    csv_path = DEFAULT_CSV
+    in_dir = INPUT_DIR
+    out_dir = OUTPUT_DIR
+    complete_dir = COMPLETE_DIR
 
     if len(args) == 1:
-        first = args[0]
-        if first.lower().endswith(".csv"):
+        first = Path(args[0])
+        if first.suffix.lower() == ".csv":
             csv_path = first
         else:
             in_dir = first
     elif len(args) == 2:
-        first, second = args
-        if first.lower().endswith(".csv"):
+        first, second = map(Path, args)
+        if first.suffix.lower() == ".csv":
             csv_path = first
             in_dir = second
         else:
             in_dir = first
             out_dir = second
     elif len(args) >= 3:
-        csv_path, in_dir, out_dir = args[:3]
+        csv_path, in_dir, out_dir = map(Path, args[:3])
         if len(args) >= 4:
-            complete_dir = args[3]
+            complete_dir = Path(args[3])
 
-    download_mountain_photos(csv_path, in_dir)
+    download_mountain_photos(csv_path, INPUT_DIR)
     generate_stamps(in_dir, out_dir)
     add_mountain_names(in_dir, out_dir, complete_dir)
