@@ -1,15 +1,16 @@
 # Mountain Stamps (free, CPU-only, batch)
 
-山の写真からスタンプ風PNGを **無料/CPUのみ** でバッチ生成します。  
-- 入力: `input_images/`（jpg/jpeg/png/webp）
-- 出力: `output_stamps/`（`*_stamp.png` 透過768px）
+山の写真からスタンプ風PNGを **無料/CPUのみ** でバッチ生成します。
+- リスト: `dat/top100mountains_v4.csv`
+- 入力: Wikipediaから自動取得し `input_images/` に保存
+- 出力: `output_stamps/`（入力と同名のPNG、透過768px）
 - 自動化: GitHub Actions（毎日UTC20:00/JST05:00 & 手動実行）
 
 ## ローカル実行
 ```bash
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-python tools/batch_stamp.py input_images output_stamps
+python tools/batch_stamp.py dat/top100mountains_v4.csv input_images output_stamps
 ```
 
 ## GitHub Actions

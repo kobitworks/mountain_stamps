@@ -1,8 +1,11 @@
-import sys, glob
+import sys, csv
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 import cv2
+from urllib.request import urlopen
+from urllib.parse import quote, urlparse, unquote
+import json
 
 def ensure_dir(p: str):
     Path(p).mkdir(parents=True, exist_ok=True)
@@ -140,6 +143,53 @@ def filename_to_name(path: str) -> str:
     stem = Path(path).stem.replace("_", " ").strip()
     return stem[:24] if len(stem) > 24 else stem
 
+
+def download_mountain_photos(csv_path: str, out_dir: str):
+    """CSVの note_url からWikipediaの画像を取得し保存する。"""
+    ensure_dir(out_dir)
+    try:
+        with open(csv_path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                gis_id = row.get("gis_id") or row.get("id")
+                name = row.get("a_name") or row.get("name")
+                note_url = row.get("note_url") or row.get("wiki_url")
+                if not (gis_id and name and note_url):
+                    continue
+                title = unquote(note_url.rstrip("/").split("/")[-1])
+                info = fetch_mountain_data(title)
+                img_url = info.get("image_url")
+                if not img_url:
+                    print(f"WARN: 画像取得失敗 ({name})")
+                    continue
+                ext = Path(urlparse(img_url).path).suffix or ".jpg"
+                fname = f"{gis_id}_{name}{ext}"
+                save_path = Path(out_dir) / fname
+                try:
+                    with urlopen(img_url, timeout=20) as r, open(save_path, "wb") as out:
+                        out.write(r.read())
+                    print(f"DOWNLOADED: {save_path}")
+                except Exception as e:
+                    print(f"WARN: 画像保存失敗 ({name}) {e}")
+    except FileNotFoundError:
+        print(f"WARN: CSVが見つかりません: {csv_path}")
+
+def fetch_mountain_data(name: str) -> dict:
+    """日本語Wikipediaから山の概要とサムネイル画像URLを取得する。"""
+    url = f"https://ja.wikipedia.org/api/rest_v1/page/summary/{quote(name)}"
+    try:
+        with urlopen(url, timeout=10) as r:
+            data = json.load(r)
+        thumb = data.get("thumbnail") or {}
+        return {
+            "title": data.get("title", name),
+            "summary": data.get("extract", ""),
+            "image_url": thumb.get("source", ""),
+        }
+    except Exception as e:
+        print(f"WARN: Wikipedia取得失敗 ({name}) {e}")
+        return {"title": name, "summary": "", "image_url": ""}
+
 def process_folder(in_dir: str, out_dir: str):
     ensure_dir(out_dir)
     paths = []
@@ -151,14 +201,21 @@ def process_folder(in_dir: str, out_dir: str):
             img = load_image(p)
             mask = extract_mountain_mask(img)
             name = filename_to_name(p)
-            stamp = make_stamp(img, mask, name=name)
-            out = Path(out_dir) / (Path(p).stem + "_stamp.png")
-            stamp.save(out)
-            print(f"OK: {p} -> {out}")
+            info = fetch_mountain_data(name)
+            stamp = make_stamp(img, mask, name=info["title"])
+            stem = Path(p).stem
+            out_stamp = Path(out_dir) / f"{stem}.png"
+            stamp.save(out_stamp)
+            if info["summary"]:
+                out_txt = Path(out_dir) / f"{stem}_wiki.txt"
+                out_txt.write_text(info["summary"], encoding="utf-8")
+            print(f"OK: {p} -> {out_stamp}")
         except Exception as e:
             print(f"FAIL: {p} ({e})")
 
 if __name__ == "__main__":
-    in_dir = sys.argv[1] if len(sys.argv) > 1 else "input_images"
-    out_dir = sys.argv[2] if len(sys.argv) > 2 else "output_stamps"
+    csv_path = sys.argv[1] if len(sys.argv) > 1 else "dat/top100mountains_v4.csv"
+    in_dir = sys.argv[2] if len(sys.argv) > 2 else "input_images"
+    out_dir = sys.argv[3] if len(sys.argv) > 3 else "output_stamps"
+    download_mountain_photos(csv_path, in_dir)
     process_folder(in_dir, out_dir)
