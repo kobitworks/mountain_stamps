@@ -1,6 +1,6 @@
 import sys, csv
 from pathlib import Path
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 import cv2
 from urllib.request import urlopen
@@ -62,6 +62,9 @@ def crop_to_mask(img_pil: Image.Image, mask_pil: Image.Image, pad_ratio: float =
     b = min(b + pad_y, img_pil.height)
     return img_pil.crop((l, t, r, b)), mask_pil.crop((l, t, r, b))
 
+FONT_PATH = Path(__file__).resolve().parent / "YujiSyuku-Regular.ttf"
+
+
 def make_stamp(img_pil: Image.Image, mask_pil: Image.Image, name: str = "") -> Image.Image:
     size = 768
     canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
@@ -87,6 +90,31 @@ def make_stamp(img_pil: Image.Image, mask_pil: Image.Image, name: str = "") -> I
     tmp2 = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
     tmp2.paste(silhouette, offset, silhouette.split()[3])
     canvas.alpha_composite(tmp2)
+
+    if name:
+        try:
+            font_size = 80
+            font = ImageFont.truetype(str(FONT_PATH), font_size)
+        except OSError:
+            font = ImageFont.load_default()
+            font_size = 20
+        max_width = size - 2 * (margin + border)
+        stroke = 4
+        bbox = draw.textbbox((0, 0), name, font=font, stroke_width=stroke)
+        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        while w > max_width and font_size > 10:
+            font_size -= 2
+            try:
+                font = ImageFont.truetype(str(FONT_PATH), font_size)
+            except OSError:
+                font = ImageFont.load_default()
+                break
+            bbox = draw.textbbox((0, 0), name, font=font, stroke_width=stroke)
+            w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        x = (size - w) // 2
+        y = int(size * 0.55)
+        draw.text((x, y), name, font=font, fill=(0, 0, 0, 255),
+                  stroke_width=stroke, stroke_fill=(255, 255, 255, 255))
 
     return canvas
 
@@ -147,8 +175,9 @@ def fetch_mountain_data(name: str) -> dict:
         print(f"WARN: Wikipedia取得失敗 ({name}) {e}")
         return {"title": name, "summary": "", "image_url": ""}
 
-def process_folder(in_dir: str, out_dir: str):
+def process_folder(in_dir: str, out_dir: str, complete_dir: str):
     ensure_dir(out_dir)
+    ensure_dir(complete_dir)
     paths = []
     for ext in ("*.jpg", "*.jpeg", "*.png", "*.webp"):
         paths += list(Path(in_dir).glob(ext))
@@ -156,7 +185,8 @@ def process_folder(in_dir: str, out_dir: str):
     for p in paths:
         stem = Path(p).stem
         out_stamp = Path(out_dir) / f"{stem}.png"
-        if out_stamp.exists():
+        complete_stamp = Path(complete_dir) / f"{stem}.png"
+        if complete_stamp.exists():
             continue
         try:
             img = load_image(p)
@@ -164,12 +194,14 @@ def process_folder(in_dir: str, out_dir: str):
             img, mask = crop_to_mask(img, mask)
             name = filename_to_name(p)
             info = fetch_mountain_data(name)
-            stamp = make_stamp(img, mask, name=info["title"])
+            stamp = make_stamp(img, mask)
             stamp.save(out_stamp)
+            named = make_stamp(img, mask, name=info["title"])
+            named.save(complete_stamp)
             if info["summary"]:
-                out_txt = Path(out_dir) / f"{stem}_wiki.txt"
+                out_txt = Path(complete_dir) / f"{stem}_wiki.txt"
                 out_txt.write_text(info["summary"], encoding="utf-8")
-            print(f"OK: {p} -> {out_stamp}")
+            print(f"OK: {p} -> {complete_stamp}")
         except Exception as e:
             print(f"FAIL: {p} ({e})")
 
@@ -183,6 +215,7 @@ if __name__ == "__main__":
     csv_path = "dat/top100mountains_v4.csv"
     in_dir = "input_images"
     out_dir = "output_stamps"
+    complete_dir = "complete_stamp"
 
     if len(args) == 1:
         first = args[0]
@@ -200,6 +233,8 @@ if __name__ == "__main__":
             out_dir = second
     elif len(args) >= 3:
         csv_path, in_dir, out_dir = args[:3]
+        if len(args) >= 4:
+            complete_dir = args[3]
 
     download_mountain_photos(csv_path, in_dir, out_dir)
-    process_folder(in_dir, out_dir)
+    process_folder(in_dir, out_dir, complete_dir)

@@ -4,6 +4,7 @@
 - リスト: `dat/top100mountains_v4.csv`
 - 入力: Wikipediaから自動取得し `input_images/` に保存
 - 出力: `output_stamps/`（入力と同名のPNG、透過768px）
+- 山名入りスタンプ: `complete_stamp/`
 - 自動化: GitHub Actions（毎日UTC20:00/JST05:00 & 手動実行）
 
 ## ローカル実行
