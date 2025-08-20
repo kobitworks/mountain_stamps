@@ -15,6 +15,8 @@ pip install -r requirements.txt
 python tools/batch_stamp.py input_images output_stamps
 # もしくは CSV も指定
 # python tools/batch_stamp.py dat/top100mountains_v4.csv input_images output_stamps
+# 既に input_images に画像があり、output_stamps に無いスタンプのみ生成する場合
+python tools/generate_missing_stamps.py
 ```
 
 ## GitHub Actions
