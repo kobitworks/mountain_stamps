@@ -1,0 +1,23 @@
+name: 山スタンプAPI実行
+
+on:
+  workflow_dispatch:
+
+jobs:
+  stamp:
+    runs-on: ubuntu-latest
+    steps:
+      # リポジトリをチェックアウト
+      - name: チェックアウト
+        uses: actions/checkout@v4
+
+      # PythonスクリプトでAPIを実行
+      - name: PythonでAPI実行
+        run: python tools/api_request.py
+
+      # レスポンスをartifactとしてアップロード
+      - name: レスポンスをアップロード
+        uses: actions/upload-artifact@v4
+        with:
+          name: stamp-result
+          path: response.json
