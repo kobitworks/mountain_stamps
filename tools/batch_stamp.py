@@ -34,7 +34,7 @@ def load_image(path: str) -> Image.Image:
 
 
 def extract_mountain_mask(img_pil: Image.Image) -> Image.Image:
-    """Canny + 形態学で最大コンポーネント抽出し、上側20%は空とみなして切り落とす。"""
+    """Canny + 形態学で最大コンポーネントを抽出する。"""
     img = np.array(img_pil)
     h, w, _ = img.shape
     scale = 640 / max(h, w)
@@ -57,9 +57,6 @@ def extract_mountain_mask(img_pil: Image.Image) -> Image.Image:
             return area * (1.0 + 0.5 * (cy / gray.shape[0]))  # 下側ほど加点
         best = max(contours, key=score)
         cv2.drawContours(mask, [best], -1, 255, thickness=cv2.FILLED)
-
-    cut = int(mask.shape[0] * 0.2)
-    mask[:cut, :] = 0
 
     mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_LINEAR)
     _, mask = cv2.threshold(mask, 100, 255, cv2.THRESH_BINARY)
