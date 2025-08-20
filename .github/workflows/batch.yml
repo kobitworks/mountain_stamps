@@ -2,8 +2,8 @@ name: Generate Mountain Stamps
 
 on:
   workflow_dispatch: {}
-  schedule:
-    - cron: '0 20 * * *'   # 毎日UTC20:00（JST+9で翌5:00）
+  #schedule:
+    #- cron: '0 20 * * *'   # 毎日UTC20:00（JST+9で翌5:00）
 
 permissions:
   contents: write
