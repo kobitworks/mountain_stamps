@@ -1,12 +1,13 @@
 import sys, csv
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
 import numpy as np
 import cv2
 from urllib.request import urlopen, Request
 from urllib.parse import quote, urlparse, unquote
 import json
 import time
+import random
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 INPUT_DIR = BASE_DIR / "input_images"
@@ -98,18 +99,47 @@ def make_stamp(img_pil: Image.Image, mask_pil: Image.Image, name: str = "") -> I
     mask_sq = mask_pil.resize(new_size, Image.LANCZOS)
     m = mask_sq.convert("L").point(lambda v: 255 if v > 80 else 0)
 
-    sil_layer = Image.new("RGBA", new_size, (0, 0, 0, 255))
-    silhouette = Image.composite(sil_layer, Image.new("RGBA", new_size, (0, 0, 0, 0)), m)
+    # --- 網掛けと輪郭強調によるシルエット生成 ---
+    # グレースケール化してディザ処理を適用
+    gray = img_sq.convert("L")
+    dither = gray.convert("1")  # Floyd-Steinberg ディザ
+    dither = dither.convert("L")
+    halftone = ImageOps.colorize(dither, black="black", white="white").convert("RGBA")
+    halftone.putalpha(m)
 
+    # 輪郭線を抽出して強調
+    mask_np = np.array(m)
+    edges = cv2.Canny(mask_np, 80, 160)
+    edges = cv2.dilate(edges, np.ones((3, 3), np.uint8), 1)
+    edge_img = Image.fromarray(edges)
+    edge_rgba = Image.new("RGBA", new_size, (0, 0, 0, 255))
+    edge_rgba.putalpha(edge_img)
+
+    # キャンバスへ合成
     offset = (margin + border + (inner_size - new_size[0]) // 2,
               margin + border + (inner_size - new_size[1]) // 2)
     tmp2 = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    tmp2.paste(silhouette, offset, silhouette.split()[3])
+    tmp2.paste(halftone, offset, halftone.split()[3])
+    tmp2.paste(edge_rgba, offset, edge_rgba.split()[3])
+
     # 山のシルエットが円の外にはみ出さないようにクリッピング
     circle_mask = Image.new("L", canvas.size, 0)
     ImageDraw.Draw(circle_mask).ellipse(circle_bbox, fill=255)
     tmp2 = Image.composite(tmp2, Image.new("RGBA", canvas.size, (0, 0, 0, 0)), circle_mask)
     canvas.alpha_composite(tmp2)
+
+    # --- かすれ・インクのにじみを追加 ---
+    smudge = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    sdraw = ImageDraw.Draw(smudge)
+    for _ in range(120):
+        r = random.randint(1, 4)
+        x = random.randint(circle_bbox[0], circle_bbox[2])
+        y = random.randint(circle_bbox[1], circle_bbox[3])
+        alpha = random.randint(20, 60)
+        sdraw.ellipse((x - r, y - r, x + r, y + r), fill=(0, 0, 0, alpha))
+    smudge = smudge.filter(ImageFilter.GaussianBlur(0.8))
+    smudge = Image.composite(smudge, Image.new("RGBA", canvas.size, (0, 0, 0, 0)), circle_mask)
+    canvas.alpha_composite(smudge)
 
     if name:
         try:
