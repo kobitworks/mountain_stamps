@@ -3,15 +3,25 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 import cv2
-from urllib.request import urlopen
+from urllib.request import urlopen, Request
 from urllib.parse import quote, urlparse, unquote
 import json
+import time
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 INPUT_DIR = BASE_DIR / "input_images"
 OUTPUT_DIR = BASE_DIR / "output_stamps"
 COMPLETE_DIR = BASE_DIR / "complete_stamp"
 DEFAULT_CSV = BASE_DIR / "dat/top100mountains_v4.csv"
+
+USER_AGENT = "MountainStamps/1.0 (+https://github.com/kaizen-bot/mountain_stamps)"
+SLEEP_SEC = 1.0
+
+
+def open_url(url, timeout=10):
+    req = Request(url, headers={"User-Agent": USER_AGENT})
+    return urlopen(req, timeout=timeout)
+
 
 def ensure_dir(p: str):
     Path(p).mkdir(parents=True, exist_ok=True)
@@ -159,11 +169,13 @@ def download_mountain_photos(csv_path: Path, img_dir: Path = INPUT_DIR):
                 fname = f"{stem}{ext}"
                 save_path = Path(img_dir) / fname
                 try:
-                    with urlopen(img_url, timeout=20) as r, open(save_path, "wb") as out:
+                    with open_url(img_url, timeout=20) as r, open(save_path, "wb") as out:
                         out.write(r.read())
                     print(f"DOWNLOADED: {save_path}")
+                    time.sleep(SLEEP_SEC)
                 except Exception as e:
                     print(f"WARN: 画像保存失敗 ({name}) {e}")
+                    time.sleep(SLEEP_SEC)
     except FileNotFoundError:
         print(f"WARN: CSVが見つかりません: {csv_path}")
 
@@ -171,8 +183,9 @@ def fetch_mountain_data(name: str) -> dict:
     """日本語Wikipediaから山の概要とサムネイル画像URLを取得する。"""
     url = f"https://ja.wikipedia.org/api/rest_v1/page/summary/{quote(name)}"
     try:
-        with urlopen(url, timeout=10) as r:
+        with open_url(url, timeout=10) as r:
             data = json.load(r)
+        time.sleep(SLEEP_SEC)
         thumb = data.get("thumbnail") or {}
         return {
             "title": data.get("title", name),
@@ -181,6 +194,7 @@ def fetch_mountain_data(name: str) -> dict:
         }
     except Exception as e:
         print(f"WARN: Wikipedia取得失敗 ({name}) {e}")
+        time.sleep(SLEEP_SEC)
         return {"title": name, "summary": "", "image_url": ""}
 
 def generate_stamps(in_dir: str, out_dir: str):
@@ -270,5 +284,6 @@ if __name__ == "__main__":
             complete_dir = Path(args[3])
 
     download_mountain_photos(csv_path, in_dir)
+    time.sleep(5)
     generate_stamps(in_dir, out_dir)
     add_mountain_names(in_dir, out_dir, complete_dir)
