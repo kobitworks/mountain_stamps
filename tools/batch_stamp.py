@@ -8,6 +8,8 @@ from urllib.parse import quote, urlparse, unquote
 import json
 import time
 import random
+import io
+import zipfile
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 INPUT_DIR = BASE_DIR / "input_images"
@@ -79,9 +81,30 @@ def crop_to_mask(img_pil: Image.Image, mask_pil: Image.Image, pad_ratio: float =
     b = min(b + pad_y, img_pil.height)
     return img_pil.crop((l, t, r, b)), mask_pil.crop((l, t, r, b))
 
-FONT_PATH = Path(__file__).resolve().parent / "YujiSyuku-Regular.ttf"
+FONT_PATH = Path(__file__).resolve().parent / "YujiBoku-Regular.ttf"
+FONT_DOWNLOAD_URL = "https://fonts.google.com/download?family=Yuji%20Boku"
 # 標準フォント（DejaVu Sans）を使用
 DEFAULT_FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+
+
+def get_font(font_size: int) -> ImageFont.FreeTypeFont:
+    """指定サイズのフォントを取得する。未取得の場合はGoogle FontsからDLする。"""
+    path = FONT_PATH
+    if not path.exists():
+        try:
+            with open_url(FONT_DOWNLOAD_URL, timeout=20) as r:
+                data = r.read()
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                for name in zf.namelist():
+                    if name.endswith("YujiBoku-Regular.ttf"):
+                        path.write_bytes(zf.read(name))
+                        break
+        except Exception:
+            path = Path(DEFAULT_FONT_PATH)
+    try:
+        return ImageFont.truetype(str(path), font_size)
+    except OSError:
+        return ImageFont.load_default()
 
 
 def make_stamp(img_pil: Image.Image, mask_pil: Image.Image, name: str = "") -> Image.Image:
@@ -144,12 +167,8 @@ def make_stamp(img_pil: Image.Image, mask_pil: Image.Image, name: str = "") -> I
     canvas.alpha_composite(smudge)
 
     if name:
-        try:
-            font_size = 42
-            font = ImageFont.truetype(DEFAULT_FONT_PATH, font_size)
-        except OSError:
-            font = ImageFont.load_default()
-            font_size = 42
+        font_size = 42
+        font = get_font(font_size)
         bbox = draw.textbbox((0, 0), name, font=font)
         w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
         x = (size - w) // 2
