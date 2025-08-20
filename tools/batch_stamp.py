@@ -92,7 +92,7 @@ def make_stamp(img_pil: Image.Image, mask_pil: Image.Image, name: str = "") -> I
     margin = 20
     border = 24  # 円枠線を従来の2倍に太くする
     circle_bbox = [margin, margin, size - margin, size - margin]
-    draw.ellipse(circle_bbox, fill=(255, 255, 255, 255), outline=(0, 0, 0, 255), width=border)
+    draw.ellipse(circle_bbox, fill=(255, 255, 255, 255))
 
     inner_size = size - 2 * (margin + border)
     scale = inner_size / max(img_pil.width, img_pil.height)
@@ -156,6 +156,7 @@ def make_stamp(img_pil: Image.Image, mask_pil: Image.Image, name: str = "") -> I
         y = size - margin - border - h - 10
         draw.text((x, y), name, font=font, fill=(0, 0, 0, 255))
 
+    draw.ellipse(circle_bbox, outline=(0, 0, 0, 255), width=border)
     return canvas
 
 def filename_to_name(path: str) -> str:
