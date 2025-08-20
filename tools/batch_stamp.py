@@ -196,8 +196,12 @@ def download_mountain_photos(csv_path: Path, img_dir: Path = INPUT_DIR):
                 if not (gis_id and name and note_url):
                     continue
                 stem = f"{gis_id}_{name}"
-                # 画像ファイルが存在しなければダウンロード
-                if any((Path(img_dir) / f"{stem}{ext}").exists() for ext in [".jpg", ".jpeg", ".png", ".webp"]):
+                # 既存ファイルを大文字小文字を区別せずに確認
+                if any(
+                    p.stem == stem and p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}
+                    for p in Path(img_dir).iterdir()
+                    if p.is_file()
+                ):
                     continue
                 title = unquote(note_url.rstrip("/").split("/")[-1])
                 info = fetch_mountain_data(title)
@@ -211,7 +215,10 @@ def download_mountain_photos(csv_path: Path, img_dir: Path = INPUT_DIR):
                 try:
                     with open_url(img_url, timeout=20) as r, open(save_path, "wb") as out:
                         out.write(r.read())
-                    print(f"DOWNLOADED: {save_path}")
+                    lower_path = save_path.with_suffix(save_path.suffix.lower())
+                    if save_path != lower_path:
+                        save_path.rename(lower_path)
+                    print(f"DOWNLOADED: {lower_path}")
                     time.sleep(SLEEP_SEC)
                 except Exception as e:
                     print(f"WARN: 画像保存失敗 ({name}) {e}")
@@ -240,10 +247,11 @@ def fetch_mountain_data(name: str) -> dict:
 def generate_stamps(in_dir: str, out_dir: str):
     """入力画像からスタンプPNGを作成する。"""
     ensure_dir(out_dir)
-    paths = []
-    for ext in ("*.jpg", "*.jpeg", "*.png", "*.webp"):
-        paths += list(Path(in_dir).glob(ext))
-    paths = sorted(map(str, paths))
+    paths = sorted(
+        str(p)
+        for p in Path(in_dir).iterdir()
+        if p.is_file() and p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}
+    )
     for p in paths:
         stem = Path(p).stem
         out_stamp = Path(out_dir) / f"{stem}.png"
