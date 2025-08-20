@@ -211,6 +211,10 @@ def download_mountain_photos(csv_path: Path, img_dir: Path = INPUT_DIR):
                 try:
                     with open_url(img_url, timeout=20) as r, open(save_path, "wb") as out:
                         out.write(r.read())
+                    lower_path = save_path.with_suffix(save_path.suffix.lower())
+                    if save_path != lower_path:
+                        save_path.rename(lower_path)
+                        save_path = lower_path
                     print(f"DOWNLOADED: {save_path}")
                     time.sleep(SLEEP_SEC)
                 except Exception as e:
@@ -240,9 +244,8 @@ def fetch_mountain_data(name: str) -> dict:
 def generate_stamps(in_dir: str, out_dir: str):
     """入力画像からスタンプPNGを作成する。"""
     ensure_dir(out_dir)
-    paths = []
-    for ext in ("*.jpg", "*.jpeg", "*.png", "*.webp"):
-        paths += list(Path(in_dir).glob(ext))
+    paths = [p for p in Path(in_dir).glob("*")
+             if p.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp")]
     paths = sorted(map(str, paths))
     for p in paths:
         stem = Path(p).stem
