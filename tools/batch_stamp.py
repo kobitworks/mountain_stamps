@@ -80,6 +80,8 @@ def crop_to_mask(img_pil: Image.Image, mask_pil: Image.Image, pad_ratio: float =
     return img_pil.crop((l, t, r, b)), mask_pil.crop((l, t, r, b))
 
 FONT_PATH = Path(__file__).resolve().parent / "YujiSyuku-Regular.ttf"
+# 標準フォント（DejaVu Sans）を使用
+DEFAULT_FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
 
 def make_stamp(img_pil: Image.Image, mask_pil: Image.Image, name: str = "") -> Image.Image:
@@ -143,28 +145,16 @@ def make_stamp(img_pil: Image.Image, mask_pil: Image.Image, name: str = "") -> I
 
     if name:
         try:
-            font_size = 80
-            font = ImageFont.truetype(str(FONT_PATH), font_size)
+            font_size = 42
+            font = ImageFont.truetype(DEFAULT_FONT_PATH, font_size)
         except OSError:
             font = ImageFont.load_default()
-            font_size = 20
-        max_width = size - 2 * (margin + border)
-        stroke = 4
-        bbox = draw.textbbox((0, 0), name, font=font, stroke_width=stroke)
+            font_size = 42
+        bbox = draw.textbbox((0, 0), name, font=font)
         w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        while w > max_width and font_size > 10:
-            font_size -= 2
-            try:
-                font = ImageFont.truetype(str(FONT_PATH), font_size)
-            except OSError:
-                font = ImageFont.load_default()
-                break
-            bbox = draw.textbbox((0, 0), name, font=font, stroke_width=stroke)
-            w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
         x = (size - w) // 2
-        y = int(size * 0.55)
-        draw.text((x, y), name, font=font, fill=(0, 0, 0, 255),
-                  stroke_width=stroke, stroke_fill=(255, 255, 255, 255))
+        y = size - margin - border - h - 10
+        draw.text((x, y), name, font=font, fill=(0, 0, 0, 255))
 
     return canvas
 
@@ -271,9 +261,9 @@ def add_mountain_names(in_dir: str, out_dir: str, complete_dir: str):
             img = load_image(str(img_path))
             mask = extract_mountain_mask(img)
             img, mask = crop_to_mask(img, mask)
-            name = filename_to_name(str(img_path))
-            info = fetch_mountain_data(name)
-            named = make_stamp(img, mask, name=info["title"])
+            a_name = stem.split('_', 1)[1] if '_' in stem else stem
+            info = fetch_mountain_data(a_name)
+            named = make_stamp(img, mask, name=a_name)
             named.save(complete_path)
             if info["summary"]:
                 out_txt = Path(complete_dir) / f"{stem}_wiki.txt"
